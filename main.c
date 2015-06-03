@@ -28,7 +28,6 @@
 #define LAT_SET 0x1
 #define LON_SET 0x2
 
-
 typedef struct _map {
   char * label;
   int mask;
@@ -55,14 +54,16 @@ map options[] = {
 void print_usage() 
 {
   FILE* f = stdout;
-  fprintf(f, "usage: sunwait [options] [sun|civ|naut|astr] [up|down] [+/-offset] [latitude] [longitude]\n\n");
+  fprintf(f, "usage: sunwait [options] [sun|civ|naut|astr] [up|down] [+/-offset] [Ffloor] [Cceiling] [Rrandom] [latitude] [longitude]\n\n");
   fprintf(f, "latitude/longigude are expressed in floating-point degrees, with [NESW] appended\n");
   fprintf(f, "\nexample: sunwait sun up -0:15:10 38.794433N 77.069450W\n");
-  fprintf(f, "This example will wait until 15 minutes and 10 seconds before the sun rises in Alexandria, VA\n");
+  fprintf(f, "This example will wait until 15 minutes and 10 seconds before the sun rises in Paris, FR\n");
 
   fprintf(f, "\nThe offset is expressed as MM, or HH:MM, or HH:MM:SS,\n");
   fprintf(f, "and indicates the additional amount of time to wait after \n");
   fprintf(f, "(or before, if negative) the specified event.\n\n");
+  fprintf(f, "Floor/Ceiling : FHH or FHH:MM and/or CHH or CHH:MM indicates the min/max hour window to set the trigger\n\n");
+  fprintf(f, "Random : RMM to randomize the trigger in the +/- MM minutes range\n\n");
   fprintf(f, "options: -p prints a summary of relevant times\n");
   fprintf(f, "         -z changes the printout to Universal Coordinated Time (UTC)\n");
   fprintf(f, "         -V prints the version number\n");
@@ -76,23 +77,33 @@ void print_usage()
 
 const char* timezone_name;
 long int timezone_offset;
+int time_isDST;
  
 int main(int argc, char *argv[])
 {
   int i, j;
   int year,month,day;
   /* My old house */
-  double lon = -77.06945;
-  double lat = 38.794433;
+  double lon = 2.3488000;
+  double lat = 48.8534100;
   int coords_set = 0;
   double temp;
   int local = 1;
   char hemisphere[3];
   int mode = MODE_USAGE;
   int offset_hour = 0; 
-  int offset_min = 0;
+  int offset_minutes = 0;
   int offset_sec = 0;
   int verbose = 0;
+  
+  int usefloor =0;
+  int floor_hour = 0;
+  int floor_minutes = 0;
+  int useceiling = 0;
+  int ceiling_hour= 0;
+  int ceiling_minutes = 0;
+  
+  int randomrange_minutes = 0;
 
   time_t tt;
   struct tm *tm;
@@ -106,6 +117,8 @@ int main(int argc, char *argv[])
   day =  1+ tm->tm_mday;
   timezone_name = tm->tm_zone;
   timezone_offset = tm->tm_gmtoff;
+    time_isDST = tm->tm_isdst;
+    
 
   for (i=1; i< argc; i++) {
     if (!strcmp("-V", argv[i])) {
@@ -138,6 +151,29 @@ int main(int argc, char *argv[])
       i++;
       day = 1 + atoi(argv[i]);
     }
+    
+    if (('F' == argv[i][0])  && ('0' <= argv[i][1] && '9' >= argv[i][1])) {
+    	usefloor = 1;
+      	char* temp;
+      	temp = 1+argv[i];
+      	floor_hour = strtol(temp, &temp, 10);
+      	if (':' == *temp)
+      		floor_minutes = strtol(temp+1, &temp, 10);
+    }
+    if (('C' == argv[i][0])  && ('0' <= argv[i][1] && '9' >= argv[i][1])) {
+    	useceiling = 1;
+      	char* temp;
+      	temp = 1+argv[i];
+      	ceiling_hour = strtol(temp, &temp, 10);
+      	if (':' == *temp)
+      		ceiling_minutes = strtol(temp+1, &temp, 10);
+    }
+    
+    if (('R' == argv[i][0])  && ('0' <= argv[i][1] && '9' >= argv[i][1])) {
+      	char* temp;
+      	temp = 1+argv[i];
+      	randomrange_minutes = strtol(temp, &temp, 10);
+    }
 
     if (2 == sscanf(argv[i], "%lf%1[Nn]", &temp, hemisphere)) {
       lat = temp; 
@@ -166,41 +202,43 @@ int main(int argc, char *argv[])
       }
     }
 
-    if (('+' == argv[i][0] || '-' == argv[i][0]) &&
-	('0' <= argv[i][1] && '9' >= argv[i][1])) {
+    if (('+' == argv[i][0] || '-' == argv[i][0]) && ('0' <= argv[i][1] && '9' >= argv[i][1])) {
       /* perl would be nice here */
       char* temp;
       temp = 1+argv[i];
-      offset_min = strtol(temp, &temp, 10);
+      offset_minutes = strtol(temp, &temp, 10);
       if (':' == *temp) {
-	offset_hour = offset_min;
-	offset_min = strtol(temp+1, &temp, 10);
+	offset_hour = offset_minutes;
+	offset_minutes = strtol(temp+1, &temp, 10);
       }
       if (':' == *temp) {
 	offset_sec = strtol(temp+1, &temp, 10);
       }
       if ('-' == argv[i][0]) {
 	offset_hour *= -1;
-	offset_min *= -1;
+	offset_minutes *= -1;
 	offset_sec *= -1;
       }
     }
   }
 
   if (coords_set != (LAT_SET | LON_SET)) {
-      fprintf(stderr, "warning: latitude or longitude not set\n\tdefault coords of Alexandria, Virgina, USA used\n");
+      fprintf(stderr, "warning: latitude or longitude not set\n\tdefault coords of Paris, France, used\n");
   }
 
   if (verbose > 1) 
     printf("Mode = 0x%x\n", mode);
   if (verbose > 0)
     printf("Offset = %s%d:%.2d:%.2d\n", 
-	   offset_hour<0 || offset_min<0|| offset_sec<0?"-":"",
-	   ABS(offset_hour), ABS(offset_min), ABS(offset_sec));
+	   offset_hour<0 || offset_minutes<0|| offset_sec<0?"-":"",
+	   ABS(offset_hour), ABS(offset_minutes), ABS(offset_sec));
 
   if ((mode & MODE_MASK) && (mode & EVENT_MASK)) {
     int sit;
     double up, down, now, interval, offset;
+    double go, floor, ceiling;
+    double randomrange;
+    
     switch (mode & MODE_MASK) {
     case MODE_USAGE:
       print_usage();
@@ -231,14 +269,24 @@ int main(int argc, char *argv[])
 
     up = TMOD(up+timezone_offset/3600);
     down = TMOD(down+timezone_offset/3600);
-    now = tm->tm_hour/1.0 + tm->tm_min/60.0 + tm->tm_sec/3600.0; 
-    offset = offset_hour/1.0 + offset_min/60.0 + offset_sec/3600.0; 
+    now = tm->tm_hour/1.0 + tm->tm_minutes/60.0 + tm->tm_sec/3600.0; 
+    offset = offset_hour/1.0 + offset_minutes/60.0 + offset_sec/3600.0; 
+    floor = floor_hour/1.0 + floor_minutes/60.0; 
+    ceiling = ceiling_hour/1.0 + ceiling_minutes/60.0; 
 
     if (EVENT_RISE == (mode & EVENT_MASK)) {
-      interval = up - now + offset;
+      go = up + offset;
     } else { /* mode is EVENT_SET */
-      interval = down - now + offset;
+      go = down + offset;
     }
+    
+    if (usefloor && (go < floor))
+      go = floor;
+    
+    if (useceiling && (go > ceiling))
+      go = ceiling;
+
+    interval = go - now;
 
     if (0 > interval) {
       if (0 < verbose) {
@@ -246,12 +294,28 @@ int main(int argc, char *argv[])
       }
       interval += 24.0;
     }
-
+	/* add a bit of randomness if required */
+	if(randomrange_minutes) {
+		time_t t;
+		srand((unsigned) time(&t));
+		randomrange = ((rand() % (2 * 60 * randomrange_minutes)) - 60 * randomrange_minutes)/3600.0;
+		interval += randomrange;
+	}
+	
     if (1 < verbose) {
-      fprintf(stderr, "Up %f\n", up);
-      fprintf(stderr, "Down %f\n", down);
+        fprintf(stderr, "timezone_offset %f\n", timezone_offset);
+        fprintf(stderr, "time_isDST %f\n", time_isDST);
+        fprintf(stderr, "Up %f\n", up);
+        fprintf(stderr, "Down %f\n", down);
       fprintf(stderr, "Now %f\n", now);
       fprintf(stderr, "Offset %f\n", offset);
+      if(usefloor)
+      	fprintf(stderr, "Floor %f\n", floor);
+      if(useceiling)
+      	fprintf(stderr, "Ceiling %f\n", ceiling);
+      if(random)
+      	fprintf(stderr, "Random %f\n", randomrange);
+      fprintf(stderr, "Go %f\n", go);      
     }
 
     if (0 < verbose) {
