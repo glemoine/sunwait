@@ -77,7 +77,6 @@ void print_usage()
 
 const char* timezone_name;
 long int timezone_offset;
-int time_isDST;
  
 int main(int argc, char *argv[])
 {
@@ -105,6 +104,8 @@ int main(int argc, char *argv[])
   
   int randomrange_minutes = 0;
 
+  int time_isDST;
+
   time_t tt;
   struct tm *tm;
 
@@ -117,7 +118,7 @@ int main(int argc, char *argv[])
   day =  1+ tm->tm_mday;
   timezone_name = tm->tm_zone;
   timezone_offset = tm->tm_gmtoff;
-    time_isDST = tm->tm_isdst;
+  time_isDST = tm->tm_isdst;
     
 
   for (i=1; i< argc; i++) {
@@ -269,7 +270,7 @@ int main(int argc, char *argv[])
 
     up = TMOD(up+timezone_offset/3600);
     down = TMOD(down+timezone_offset/3600);
-    now = tm->tm_hour/1.0 + tm->tm_minutes/60.0 + tm->tm_sec/3600.0; 
+    now = tm->tm_hour/1.0 + tm->tm_min/60.0 + tm->tm_sec/3600.0; 
     offset = offset_hour/1.0 + offset_minutes/60.0 + offset_sec/3600.0; 
     floor = floor_hour/1.0 + floor_minutes/60.0; 
     ceiling = ceiling_hour/1.0 + ceiling_minutes/60.0; 
@@ -303,8 +304,9 @@ int main(int argc, char *argv[])
 	}
 	
     if (1 < verbose) {
-        fprintf(stderr, "timezone_offset %f\n", timezone_offset);
-        fprintf(stderr, "time_isDST %f\n", time_isDST);
+        fprintf(stderr, "timezone_offset %ld\n", timezone_offset);
+        fprintf(stderr, "time_isDST %d\n", time_isDST);
+        fprintf(stderr, "timezone_name %s\n", timezone_name);
         fprintf(stderr, "Up %f\n", up);
         fprintf(stderr, "Down %f\n", down);
       fprintf(stderr, "Now %f\n", now);
